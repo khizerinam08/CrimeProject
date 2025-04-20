@@ -3,4 +3,4 @@
 /.venv
 /dataset.csv
 /df.csv
-/model2.csv
+/crime_model.pkl
