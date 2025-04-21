@@ -3,9 +3,10 @@ import './App.css'
 
 function App() {
   const [messages, setMessages] = useState([
-    { text: 'Hello, how can I help you today?', sender: 'bot' }
+    { text: 'Hello, how can I help you today?', sender: 'bot', isTyping: false }
   ])
   const [inputText, setInputText] = useState('')
+  const [latestBotMessageId, setLatestBotMessageId] = useState(null) // Track the latest bot message
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
 
@@ -43,15 +44,34 @@ function App() {
     setMessages(updatedMessages)
     setInputText('')
     
-    // Simulate bot response (after a short delay)
+    // Show bot typing indicator
     setTimeout(() => {
+      // Get bot response
+      const botResponse = getBotResponse(inputText)
+      
+      // Generate a unique ID for this message
+      const newMessageId = Date.now().toString()
+      
+      // Add bot message with typing animation
       setMessages([
         ...updatedMessages,
         { 
-          text: getBotResponse(inputText), 
-          sender: 'bot' 
+          id: newMessageId,
+          text: botResponse, 
+          sender: 'bot',
+          isTyping: true
         }
       ])
+      
+      // Set this as the latest bot message to animate
+      setLatestBotMessageId(newMessageId)
+      
+      // After typing animation completes (based on message length), clear the animation flag
+      const typingDuration = Math.min(botResponse.split(' ').length * 100 + 500, 3000)
+      
+      setTimeout(() => {
+        setLatestBotMessageId(null)
+      }, typingDuration)
     }, 600)
   }
   
@@ -70,6 +90,43 @@ function App() {
     }
   }
 
+  // Component for displaying a word with typing animation
+  const TypingWord = ({ word, index }) => {
+    const [visible, setVisible] = useState(false)
+    
+    useEffect(() => {
+      const timeout = setTimeout(() => {
+        setVisible(true)
+      }, index * 100) // Adjust timing between words
+      
+      return () => clearTimeout(timeout)
+    }, [index])
+    
+    return (
+      <span className="typing-word" style={{ opacity: visible ? 1 : 0 }}>
+        {word}{' '}
+      </span>
+    )
+  }
+
+  // Component for rendering messages
+  const MessageContent = ({ message }) => {
+    // Only animate the latest bot message
+    if (message.sender === 'bot' && message.id === latestBotMessageId) {
+      const words = message.text.split(' ')
+      
+      return (
+        <div className="typing-animation">
+          {words.map((word, index) => (
+            <TypingWord key={index} word={word} index={index} />
+          ))}
+        </div>
+      )
+    }
+    
+    return <>{message.text}</>
+  }
+
   return (
     <div className="chat-app">
       <div className="chat-container">
@@ -82,10 +139,10 @@ function App() {
           <div className="content-wrapper">
             {messages.map((message, index) => (
               <div 
-                key={index} 
+                key={message.id || index} 
                 className={`message ${message.sender}`}
               >
-              {message.text}
+                <MessageContent message={message} />
               </div>
             ))}
             <div ref={messagesEndRef} />
