@@ -1,0 +1,241 @@
+:root {
+  --background-color: #ffffff;
+  --primary-color: #8c1f1f;
+  --text-color: #1d1d1f;
+  --light-text: #5e5e5e;
+  --container-bg: #262624;
+  --border-radius: 16px;
+  --message-bubble-user: #f2f2f7;
+  --message-bubble-bot: #f2f2f7;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  overflow: hidden; /* Prevent body scrolling */
+  
+}
+
+.chat-app {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  position: relative; /* Added for positioning elements */
+}
+
+.chat-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--container-bg);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  
+  position: relative; /* Added for positioning scrollbar */
+}
+
+.content-wrapper{
+  
+  display: flex;
+  flex-direction: column;
+  padding: 0px 20% 0px 20%;
+  
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+}
+
+.input-wrapper{
+  padding: 0px 20% 0px 20%;
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome-header {
+  text-align: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.welcome-icon {
+  color: #ff9500;
+  font-size: 36px;
+  margin-bottom: 20px;
+}
+
+.welcome-text {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.messages-container {
+  height: 100%;
+  flex-grow: 1;
+  padding: 0px 40px 0px 40px;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  background-color: transparent;
+  
+  
+  
+  /* These styles push the scrollbar to the right edge */
+  position: relative;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+/* Webkit scrollbar styles to place it at the edge */
+.messages-container::-webkit-scrollbar {
+  width: 8px;
+  position: absolute;
+  right: 0;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  border: transparent;
+}
+
+/* Default spacing between all messages */
+.message {
+  margin-bottom: 24px; /* Default large gap between messages */
+  line-height: 1.4;
+  position: relative;
+  font-size: 16px;
+}
+
+/* Reduced spacing when a bot message follows a user message (reply pair) */
+.message.user + .message.bot {
+  margin-top: -16px; /* Negative margin to bring bot reply closer to user message */
+  margin-bottom: 60px; /* Larger bottom margin to create separation between conversation pairs */
+}
+
+/* Ensure user messages have consistent look */
+.message.user {
+  align-self: flex-start;
+  background-color: var(--primary-color);
+  color: white;
+  border-bottom-right-radius: 4px;
+  padding: 12px 16px;
+  border-radius: 25%;
+  max-width: 75%;
+}
+
+/* Ensure bot messages have consistent look */
+.message.bot {
+  align-self: flex-start;
+  color: white;
+  max-width: 80%;
+  padding: 4px 0;
+}
+
+.input-area {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  margin: 0px 16px 16px 16px;
+  border-radius: 25px;
+  background-color:#30302E;
+  backdrop-filter: blur(10px);
+  border: 1.5px solid #4b4b45;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.message-input {
+  flex-grow: 1;
+  padding: 12px;
+  border: none;
+  font-size: 16px;
+  outline: none;
+  background-color: transparent;
+  color: #FFFFFF; /* Change text color to white */
+  transition: all 0.2s ease;
+}
+
+/* Update the placeholder text color as well for better visibility */
+.message-input::placeholder {
+  color: rgba(255, 255, 255, 0.6); /* Semi-transparent white for placeholder */
+}
+
+.message-input:focus-within {
+  border-color: var(--primary-color);
+}
+
+.send-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 25%;
+  background-color: var(--container-bg);
+  color: white;
+  border: none;
+  margin-left: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.send-button:hover {
+  background-color: #d64545;
+}
+
+/* Modify layout for full width and scrollbar on the edge */
+@media (max-width: 768px) {
+  .chat-container {
+    padding: 0;
+  }
+}
+
+/* Add responsive design for smaller screens */
+@media (max-width: 600px) {
+  .welcome-text {
+    font-size: 24px;
+  }
+  
+  .message {
+    max-width: 85%;
+  }
+  
+  .chat-container {
+    padding: 0;
+  }
+}
+
+/* Special layout for moving the scrollbar to the exact edge */
+.chat-container {
+  overflow: hidden; /* Hide any overflow */
+}
+
+/* Create a container that works with the scrollbar positioning */
+.messages-container {
+  margin-right: 0;
+  padding-right: 0;
+  width: 100%; /* Ensure full width */
+}
