@@ -1,3 +1,5 @@
+
+
 :root {
   --background-color: #ffffff;
   --primary-color: #8c1f1f;
@@ -10,10 +12,12 @@
 }
 
 * {
+
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   font-family: 'Epilogue', sans-serif;
+  font-weight: 100;
 }
 
 html, body, #root {
@@ -151,6 +155,9 @@ body {
   max-width: 75%;
   font-family: 'Epilogue', sans-serif;
   font-weight: 500;
+  box-shadow: 2px 2px 3px 0px #000000;
+  
+
 }
 
 /* Ensure bot messages have consistent look */

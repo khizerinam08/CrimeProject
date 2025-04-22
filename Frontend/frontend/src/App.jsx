@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import axios from 'axios'
 import './App.css'
 
 function App() {
@@ -7,8 +8,12 @@ function App() {
   ])
   const [inputText, setInputText] = useState('')
   const [latestBotMessageId, setLatestBotMessageId] = useState(null) // Track the latest bot message
+  const [isLoading, setIsLoading] = useState(false) // Add loading state
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
+
+  // API base URL - change this to match your FastAPI server
+  const API_URL = 'http://localhost:8000'
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -31,7 +36,7 @@ function App() {
     }
   }, [])
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault()
     
     if (!inputText.trim()) return
@@ -43,11 +48,11 @@ function App() {
     ]
     setMessages(updatedMessages)
     setInputText('')
+    setIsLoading(true) // Set loading state
     
-    // Show bot typing indicator
-    setTimeout(() => {
-      // Get bot response
-      const botResponse = getBotResponse(inputText)
+    try {
+      // Get bot response (use await here with async function)
+      const botResponse = await getBotResponse(inputText)
       
       // Generate a unique ID for this message
       const newMessageId = Date.now().toString()
@@ -72,21 +77,60 @@ function App() {
       setTimeout(() => {
         setLatestBotMessageId(null)
       }, typingDuration)
-    }, 600)
+    } catch (error) {
+      // Handle error - add error message to chat
+      setMessages([
+        ...updatedMessages,
+        { 
+          id: Date.now().toString(),
+          text: "Sorry, I encountered an error. Please try again.", 
+          sender: 'bot',
+          isTyping: false
+        }
+      ])
+      console.error("Error getting bot response:", error)
+    } finally {
+      setIsLoading(false) // Clear loading state
+    }
   }
   
-  const getBotResponse = (text) => {
-    // Simple response logic - could be replaced with an actual API call
-    const lowerText = text.toLowerCase()
-    
-    if (lowerText.includes('hello') || lowerText.includes('hi')) {
-      return 'Hello! How can I assist you today?'
-    } else if (lowerText.includes('help')) {
-      return 'I can answer questions or provide information. What would you like to know?'
-    } else if (lowerText.includes('bye')) {
-      return 'Goodbye! Have a wonderful day!'
-    } else {
-      return "I'm still learning. Could you try asking in a different way?"
+  const getBotResponse = async (text) => {
+    try {
+      const lowerText = text.toLowerCase()
+      
+      // Check for crime prediction trigger pattern
+      if (lowerText.includes('crime') && 
+          (lowerText.includes('at') || lowerText.includes('in')) && 
+          (lowerText.includes('pm') || lowerText.includes('am'))) {
+        
+        // For now use hardcoded values - in a real app you'd parse these from the text
+        const demoData = {
+          lat: 41.88,
+          lon: -87.63,
+          hour: 20, // Simple PM/AM check
+          weekday: 5 // Current day
+        }
+        
+        console.log("Sending crime prediction request:", demoData)
+        const response = await axios.post(`${API_URL}/predict`, demoData)
+        console.log("Crime prediction response:", response.data)
+        return `Based on my analysis, ${response.data.crime_probability} chance of a crime occurring at that location and time.`
+      } 
+      
+      // Normal chat - send to /chat endpoint
+      console.log("Sending chat request:", lowerText)
+      const response = await axios.post(`${API_URL}/chat`, {
+        message: text
+      })
+      console.log("Chat response:", response.data)
+      return response.data.response || "I didn't get a valid response. Please try again."
+    } catch (error) {
+      console.error("API request error:", error)
+      if (error.response) {
+        console.error("Response data:", error.response.data)
+        console.error("Response status:", error.response.status)
+      }
+      throw error // Re-throw to be handled by caller
     }
   }
 
@@ -150,21 +194,22 @@ function App() {
         </div>
         
         <div className="input-wrapper">
-        <form className="input-area" onSubmit={handleSendMessage}>
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="Message..."
-            className="message-input"
-          />
-          <button type="submit" className="send-button">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
-        </form>
+          <form className="input-area" onSubmit={handleSendMessage}>
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={isLoading ? "Thinking..." : "Message..."}
+              className="message-input"
+              disabled={isLoading}
+            />
+            <button type="submit" className="send-button" disabled={isLoading}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
         </div>
       </div>
     </div>
