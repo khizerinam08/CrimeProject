@@ -96,41 +96,22 @@ function App() {
   
   const getBotResponse = async (text) => {
     try {
-      const lowerText = text.toLowerCase()
-      
-      // Check for crime prediction trigger pattern
-      if (lowerText.includes('crime') && 
-          (lowerText.includes('at') || lowerText.includes('in')) && 
-          (lowerText.includes('pm') || lowerText.includes('am'))) {
-        
-        // For now use hardcoded values - in a real app you'd parse these from the text
-        const demoData = {
-          lat: 41.88,
-          lon: -87.63,
-          hour: 20, // Simple PM/AM check
-          weekday: 5 // Current day
-        }
-        
-        console.log("Sending crime prediction request:", demoData)
-        const response = await axios.post(`${API_URL}/predict`, demoData)
-        console.log("Crime prediction response:", response.data)
-        return `Based on my analysis, ${response.data.crime_probability} chance of a crime occurring at that location and time.`
-      } 
-      
-      // Normal chat - send to /chat endpoint
-      console.log("Sending chat request:", lowerText)
+      // Send all messages directly to the chat endpoint
+      // The backend will determine if it's a crime query
+      console.log("Sending request to chat endpoint:", text);
       const response = await axios.post(`${API_URL}/chat`, {
         message: text
-      })
-      console.log("Chat response:", response.data)
-      return response.data.response || "I didn't get a valid response. Please try again."
+      });
+      
+      console.log("Chat response:", response.data);
+      return response.data.response || "I didn't get a valid response. Please try again.";
     } catch (error) {
-      console.error("API request error:", error)
+      console.error("API request error:", error);
       if (error.response) {
-        console.error("Response data:", error.response.data)
-        console.error("Response status:", error.response.status)
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
       }
-      throw error // Re-throw to be handled by caller
+      throw error;
     }
   }
 
