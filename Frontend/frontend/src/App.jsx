@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import './App.css'
 import MapModal from './components/MapModal'
 import TimeSelector from './components/TimeSelector'
+import axios from 'axios'
 
 function App() {
   const [messages, setMessages] = useState([])
@@ -11,7 +12,10 @@ function App() {
   const [isTyping, setIsTyping] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true) // Default open to match image
-  const [activeChat, setActiveChat] = useState('Chat 1')
+  const [activeChat, setActiveChat] = useState(null)
+  const [currentChatId, setCurrentChatId] = useState(null)
+  const [chatList, setChatList] = useState([])
+  const [loadingChats, setLoadingChats] = useState(false)
   
   // State for location selection flow
   const [showMapModal, setShowMapModal] = useState(false)
@@ -22,6 +26,9 @@ function App() {
   const [validatedTime, setValidatedTime] = useState(null)
   const [validatedDay, setValidatedDay] = useState(null)
   const [crimePredictionInProgress, setCrimePredictionInProgress] = useState(false)
+  
+  // Add this new API URL for the MongoDB backend
+  const MONGO_API_URL = 'http://localhost:5000/api'
   
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -56,15 +63,54 @@ function App() {
     document.body.classList.toggle('sidebar-open', sidebarOpen);
   }, [sidebarOpen]);
 
-  // Add the initial greeting and user message to match the image
+  // Remove the initial greeting and user message
   useEffect(() => {
     if (messages.length === 0) {
-      setMessages([
-        { text: 'Hello!', sender: 'user' },
-        { text: 'Hello! How can I assist you today?', sender: 'bot' }
-      ]);
+      setMessages([]);
     }
   }, []);
+
+  // Add this effect to create or load a chat when the app starts
+  useEffect(() => {
+    const initializeChat = async () => {
+      try {
+        // Check if we have a chatId in localStorage
+        const storedChatId = localStorage.getItem('currentChatId')
+        
+        if (storedChatId && chatList.length > 0) {
+          // Find the chat in our list
+          const chat = chatList.find(c => c.chatId === storedChatId)
+          if (chat) {
+            // Select this chat
+            selectChat(chat.chatId, chat.title)
+            return
+          }
+        }
+        
+        // If no stored chat or it wasn't found, select the first chat if available
+        if (chatList.length > 0) {
+          selectChat(chatList[0].chatId, chatList[0].title)
+        }
+      } catch (error) {
+        console.error('Error initializing chat:', error)
+      }
+    }
+    
+    if (chatList.length > 0 && !currentChatId) {
+      initializeChat()
+    }
+  }, [chatList])
+  
+  // Add this function to save a message to MongoDB
+  const saveMessageToMongo = async (message) => {
+    if (!currentChatId) return
+    
+    try {
+      await axios.put(`${MONGO_API_URL}/chats/${currentChatId}/messages`, message)
+    } catch (error) {
+      console.error('Error saving message to MongoDB:', error)
+    }
+  }
 
   // Stream/typing effect for any bot message (including initial greeting)
   const streamBotMessage = async (fullText, isHTML = false) => {
@@ -77,15 +123,20 @@ function App() {
     
     // If it's HTML content, display it instantly without typing animation
     if (isHTML) {
+      const htmlMessage = { 
+        text: fullText, 
+        sender: 'bot', 
+        id: messageId,
+        html: true 
+      }
+      
       setMessages(messages => [
         ...messages,
-        { 
-          text: fullText, 
-          sender: 'bot', 
-          id: messageId,
-          html: true 
-        }
+        htmlMessage
       ]);
+      
+      // Save the HTML message to MongoDB
+      await saveMessageToMongo(htmlMessage)
       
       setIsTyping(false);
       return messageId;
@@ -159,6 +210,14 @@ function App() {
       
       prevChar = currentChar;
     }
+    
+    // After the typing effect completes, save the final message to MongoDB
+    const finalMessage = {
+      text: fullText,
+      sender: 'bot',
+      html: false
+    }
+    await saveMessageToMongo(finalMessage)
     
     setIsTyping(false);
     setCurrentBotMessage("");
@@ -414,122 +473,11 @@ function App() {
     };
   };
 
-  // ML-like address detection system
-  const detectAddressSmarter = (text) => {
-    console.log("Running smart address detection on:", text);
-    
-    // Step 1: Preprocessing & normalization
-    const normalizedText = text
-      .replace(/hello|hi|hey|there|(\?)/gi, '') // Remove greetings and question marks
-      .replace(/\bthe\s+/gi, '')               // Remove filler words
-      .trim();
-    
-    console.log("Normalized text:", normalizedText);
-    
-    // Step 2: Intent classification (NLP-like keyword scoring)
-    const crimeKeywords = ['crime', 'safety', 'danger', 'risk', 'robbery', 'theft'];
-    const queryConcepts = ['what is', 'whats', "what's", 'how', 'tell me', 'show me', 'find', 'check', 'lookup'];
-    
-    // Count crime keywords
-    const crimeScore = crimeKeywords.reduce((score, keyword) => {
-      return score + (new RegExp(`\\b${keyword}\\b`, 'i').test(normalizedText) ? 1 : 0);
-    }, 0);
-    
-    // Count query words
-    const queryScore = queryConcepts.reduce((score, concept) => {
-      return score + (normalizedText.toLowerCase().includes(concept) ? 1 : 0);
-    }, 0);
-    
-    const isCrimeQuery = crimeScore > 0 && queryScore > 0;
-    console.log("Intent detection:", { crimeScore, queryScore, isCrimeQuery });
-    
-    // Step 3: Entity extraction - different approaches by confidence
-    let potentialAddress = null;
-    let confidence = 0;
-    
-    // First try - Chicago specific patterns (highest confidence)
-    if (/chicago|illinois|il/i.test(normalizedText)) {
-      // Extract just the address part from Chicago mentions
-      const chicagoMatch = normalizedText.match(/\b(\w+(?:\s+\w+)*\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|court|ct|lane|ln|place|pl|square|sq|highway|hwy|parkway|pkwy|circle|cir|trail|trl|way)(?:\s+\w+)*\s+chicago(?:\s*,?\s*il(?:linois)?)?)\b/i);
-      
-      if (chicagoMatch) {
-        potentialAddress = chicagoMatch[1];
-        confidence = 0.9; // 90% confidence
-        console.log("High confidence Chicago address found:", potentialAddress);
-      } else {
-        // If no street found but Chicago mentioned, extract broader location
-        const locationWithChicago = normalizedText
-          .replace(/crime\s+(?:rate|risk|level|prediction|percentage|%)/gi, '')
-          .replace(/(?:what's|what\s+is|how\s+(?:safe|dangerous|risky)\s+is)\s+(?:it|in|at)/gi, '')
-          .trim();
-          
-        if (locationWithChicago) {
-          potentialAddress = locationWithChicago;
-          confidence = 0.7; // 70% confidence
-          console.log("Medium confidence Chicago location found:", potentialAddress);
-        }
-      }
-    }
-    
-    // Second try - street pattern matching (medium confidence)
-    if (!potentialAddress || confidence < 0.7) {
-      const streetMatch = normalizedText.match(/\b(\d+\s+\w+(?:\s+\w+)*\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|court|ct|lane|ln|place|pl|square|sq|highway|hwy|parkway|pkwy|circle|cir|trail|trl|way))\b/i);
-      
-      if (streetMatch) {
-        potentialAddress = streetMatch[1] + (!/chicago|illinois|il/i.test(streetMatch[1]) ? ", Chicago, IL" : "");
-        confidence = 0.8; // 80% confidence
-        console.log("Street pattern found:", potentialAddress);
-      }
-    }
-    
-    // Third try - preposition extraction (lower confidence)
-    if (!potentialAddress || confidence < 0.5) {
-      const prepositionMatches = normalizedText.match(/\b(?:at|in|near|around|on)\s+([^.?!]+)/i);
-      
-      if (prepositionMatches && prepositionMatches[1] && prepositionMatches[1].length > 3) {
-        const extracted = prepositionMatches[1].trim();
-        // Filter out very short extractions or ones with only crime keywords
-        if (extracted.length > 3 && !crimeKeywords.some(k => extracted.toLowerCase() === k)) {
-          potentialAddress = extracted + (!/chicago|illinois|il/i.test(extracted) ? ", Chicago, IL" : "");
-          confidence = 0.6; // 60% confidence
-          console.log("Preposition pattern found:", potentialAddress);
-        }
-      }
-    }
-    
-    // Fourth try - contextual extraction (after removing crime query indicators)
-    if (!potentialAddress || confidence < 0.4) {
-      // Remove all the crime and query parts
-      const contextualText = normalizedText
-        .replace(/crime\s+(?:rate|risk|level|prediction|percentage|%)/gi, '')
-        .replace(/(?:what's|what\s+is|how\s+(?:safe|dangerous|risky)\s+is)\s+(?:it|in|at)/gi, '')
-        .replace(new RegExp(crimeKeywords.join('|'), 'gi'), '')
-        .replace(new RegExp(queryConcepts.join('|'), 'gi'), '')
-        .trim();
-      
-      // If we have something meaningful left that's likely our location
-      if (contextualText && contextualText.length > 5 && 
-          !/^(the|a|an)$/i.test(contextualText)) {
-        potentialAddress = contextualText + (!/chicago|illinois|il/i.test(contextualText) ? ", Chicago, IL" : "");
-        confidence = 0.5; // 50% confidence
-        console.log("Contextual extraction found:", potentialAddress);
-      }
-    }
-    
-    // Return result with confidence
-    console.log(`Address detection result: ${potentialAddress} (confidence: ${confidence})`);
-    return potentialAddress;
-  };
-
-  // Function to detect address patterns in text - improved version
+  // Function to detect address patterns in text - simple version
   const detectAddress = (text) => {
-    // Use our smart detection first
-    const smartResult = detectAddressSmarter(text);
-    if (smartResult) {
-      return smartResult;
-    }
+    if (!text) return null;
     
-    console.log("Falling back to regex-based address detection for:", text);
+    console.log("Using simple address detection for:", text);
     
     // Clean the text first to remove common prefix phrases
     let cleanedInput = text
@@ -621,7 +569,7 @@ function App() {
   const extractLocationFromQuery = (text) => {
     if (!text) return null;
     
-    // Extract address using regex patterns
+    // Extract address using the simple detector
     const address = detectAddress(text);
     if (address) {
       return address;
@@ -679,7 +627,7 @@ function App() {
   };
 
   // Process crime prediction with validated time and day
-  const processCrimePrediction = async () => {
+  const processCrimePrediction = useCallback(async () => {
     if (!selectedLocation || !validatedTime || !validatedDay || crimePredictionInProgress) {
       console.log("Missing required data for prediction:", { 
         hasLocation: !!selectedLocation, 
@@ -695,32 +643,39 @@ function App() {
       // Show loading message - use regular typing for this
       await streamBotMessage("Calculating crime risk prediction...");
       
-      // Make API request with location and time data
+      // Prepare data for API call
+      const predictionData = {
+        lat: selectedLocation[0],
+        lon: selectedLocation[1],
+        hour: validatedTime.hour,
+        weekday: validatedDay.day
+      };
+      
+      console.log("Sending prediction request to API:", predictionData);
+      
+      // Make API call to backend
       const response = await fetch(`${API_URL}/predict`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          lat: selectedLocation[0],
-          lon: selectedLocation[1],
-          hour: validatedTime.hour,
-          weekday: validatedDay.day
-        })
+        body: JSON.stringify(predictionData)
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`API responded with status: ${response.status}`);
       }
       
-      const data = await response.json();
+      const result = await response.json();
       
-      // Extract crime probability from the response
-      const probability = data.probability || "0.00%";
+      console.log("Received prediction result:", result);
       
-      // Determine risk level for styling
-      let riskLevel = "low";
+      // Extract probability from result
+      const probability = result.probability || "0.00%";
+      
+      // Determine risk level for styling based on probability value
       const probValue = parseFloat(probability);
+      let riskLevel = "low";
       if (probValue > 70) {
         riskLevel = "high";
       } else if (probValue > 40) {
@@ -750,19 +705,19 @@ function App() {
       setValidatedDay(null);
       
     } catch (error) {
-      console.error("Error getting crime prediction:", error);
+      console.error("Error generating crime prediction:", error);
       await streamBotMessage("Sorry, I encountered an error calculating the crime risk. Please try again.");
     } finally {
       setCrimePredictionInProgress(false);
     }
-  };
+  }, [selectedLocation, validatedTime, validatedDay, crimePredictionInProgress, streamBotMessage, API_URL]);
 
   // When both time and day are validated, process the crime prediction
   useEffect(() => {
     if (validatedTime && validatedDay && selectedLocation && !crimePredictionInProgress) {
       processCrimePrediction();
     }
-  }, [validatedTime, validatedDay]);
+  }, [validatedTime, validatedDay, selectedLocation, crimePredictionInProgress, processCrimePrediction]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault()
@@ -771,14 +726,20 @@ function App() {
     
     const userTextInput = inputText.trim();
     
-    // Add user message
+    // Create user message object
+    const userMessage = { text: userTextInput, sender: 'user' }
+    
+    // Add user message to UI
     const updatedMessages = [
       ...messages, 
-      { text: userTextInput, sender: 'user' }
+      userMessage
     ]
     setMessages(updatedMessages)
     setInputText('')
     setIsLoading(true) // Set loading state
+    
+    // Save user message to MongoDB
+    await saveMessageToMongo(userMessage)
     
     // Check if user wants to cancel or change topic
     if (isChangingTopic(userTextInput)) {
@@ -789,7 +750,18 @@ function App() {
       setValidatedDay(null);
       setSelectedLocation(null);
       
-      await streamBotMessage("I understand you want to change the topic. What would you like to talk about instead?", true);
+      const botResponse = {
+        text: "I understand you want to change the topic. What would you like to talk about instead?",
+        sender: 'bot',
+        html: true
+      }
+      
+      // Add bot message to UI
+      setMessages([...updatedMessages, botResponse])
+      
+      // Save bot message to MongoDB
+      await saveMessageToMongo(botResponse)
+      
       setIsLoading(false);
       return;
     }
@@ -828,7 +800,7 @@ function App() {
       
       if (addressText) {
         // Instead of geocoding, just prompt the user to select on the map
-        await streamBotMessage(`I see you entered a location. Please select the exact spot on the map below:`, true);
+        await streamBotMessage(`If you want to check the crime, please select the exact spot on the map below:`, true);
         setIsLoading(false);
         return;
       }
@@ -926,20 +898,35 @@ function App() {
       }
       
       // Standard chat flow - add an empty bot message that will be updated
+      const emptyBotMessage = { text: "", sender: 'bot', id: Date.now().toString() }
       setMessages([
         ...updatedMessages,
-        { text: "", sender: 'bot', id: Date.now().toString() }
+        emptyBotMessage
       ])
       
       setIsTyping(true)
       setCurrentBotMessage("")
       
       // Get bot response using streaming
-      await getStreamingBotResponse(userTextInput)
+      const response = await getStreamingBotResponse(userTextInput)
+      
+      // Once streaming is complete, save the final message
+      const finalBotMessage = { 
+        text: response.text, 
+        sender: 'bot',
+        html: false
+      }
+      await saveMessageToMongo(finalBotMessage)
       
     } catch (error) {
       // Handle error - stream error message to chat
+      const errorMessage = { 
+        text: "Sorry, I encountered an error. Please try again.", 
+        sender: 'bot', 
+        html: true 
+      }
       await streamBotMessage("Sorry, I encountered an error. Please try again.", true);
+      await saveMessageToMongo(errorMessage)
       console.error("Error getting bot response:", error)
     } finally {
       setIsLoading(false)
@@ -981,91 +968,91 @@ function App() {
   
   const getStreamingBotResponse = async (text) => {
     try {
-      console.log("Sending streaming request to chat endpoint:", text);
-      console.log("Current session ID:", sessionId);
+      console.log("Sending message to backend API:", text);
       
-      const payload = {
+      // If no session ID exists, create one for this conversation
+      const currentSessionId = sessionId || `session-${Date.now()}`;
+      if (!sessionId) {
+        setSessionId(currentSessionId);
+      }
+      
+      // Prepare data for the API call
+      const chatData = {
         message: text,
+        session_id: currentSessionId,
         stream: true
       };
       
-      // Only include session_id if it exists and is not null
-      if (sessionId) {
-        payload.session_id = sessionId;
-      }
+      // Initial empty response
+      let fullResponse = "";
+      setCurrentBotMessage("");
       
-      // Create a fetch request that supports streaming
+      // Make the streaming request to the backend
+      console.log("Making streaming request to:", `${API_URL}/chat`);
       const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/x-ndjson'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(chatData)
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`API responded with status: ${response.status}`);
       }
       
-      // Get the response reader for streaming
+      // Get the response as a stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let fullResponse = "";
       
+      // Process the stream
       while (true) {
         const { value, done } = await reader.read();
         
         if (done) {
+          console.log("Stream completed, full response:", fullResponse);
           break;
         }
         
         // Decode the chunk
-        const chunk = decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value);
+        console.log("Received chunk:", chunk);
         
-        // Process each line (there might be multiple chunks per read)
+        // Process each line (the API returns newline-separated JSON)
         const lines = chunk.split('\n').filter(line => line.trim() !== '');
         
         for (const line of lines) {
           try {
-            const data = JSON.parse(line);
+            const jsonResponse = JSON.parse(line);
             
-            // Update session ID if present
-            if (data.session_id) {
-              setSessionId(data.session_id);
-            }
-            
-            // Update current bot message with new chunk
-            if (data.chunk !== undefined) {
-              // Simply append each character
-              fullResponse += data.chunk;
+            if (jsonResponse.chunk) {
+              // Append the chunk to the full response
+              fullResponse += jsonResponse.chunk;
               setCurrentBotMessage(fullResponse);
+              
+              // Update the messages state with the current progress
+              setMessages(messages => {
+                const newMessages = [...messages];
+                if (newMessages[newMessages.length - 1].sender === 'bot') {
+                  newMessages[newMessages.length - 1].text = fullResponse;
+                }
+                return newMessages;
+              });
             }
           } catch (e) {
-            console.error("Error parsing JSON line:", line, e);
+            console.error("Error parsing JSON from stream:", e, "Line:", line);
           }
         }
       }
       
-      // After streaming is complete, set the full message
-      setMessages(messages => {
-        const newMessages = [...messages];
-        newMessages[newMessages.length - 1].text = fullResponse;
-        return newMessages;
-      });
-      setCurrentBotMessage("");
-      
-      return { text: fullResponse, sessionId };
+      // Return the full response after streaming is complete
+      return { text: fullResponse, sessionId: currentSessionId };
       
     } catch (error) {
-      console.error("API request error:", error);
-      if (error.response) {
-        console.error("Response data:", error.response.data);
-        console.error("Response status:", error.response.status);
-      }
+      console.error("Error in chat API call:", error);
       throw error;
     }
-  }
+  };
   
   // Component to display animated typing effect for the current message being typed
   const TypingEffect = () => {
@@ -1086,18 +1073,7 @@ function App() {
 
   // Create a new chat session
   const startNewChat = () => {
-    setSessionId(null);
-    setSelectedLocation(null);
-    setAwaitingLocation(false);
-    setAwaitingTimeDay(false);
-    setValidatedTime(null);
-    setValidatedDay(null);
-    
-    // Add initial greeting with both user and bot messages
-    setMessages([
-      { text: 'Hello!', sender: 'user' },
-      { text: 'Hello! How can I assist you today?', sender: 'bot' }
-    ]);
+    createNewChat()
   };
 
   // Open map modal (for button in chat)
@@ -1109,6 +1085,87 @@ function App() {
   const openTimeModal = () => {
     setShowTimeModal(true);
   };
+
+  // Add this function to fetch all chats from MongoDB
+  const fetchAllChats = async () => {
+    try {
+      setLoadingChats(true)
+      const response = await axios.get(`${MONGO_API_URL}/chats`)
+      if (response.data.success) {
+        setChatList(response.data.data)
+      }
+    } catch (error) {
+      console.error('Error fetching chats:', error)
+    } finally {
+      setLoadingChats(false)
+    }
+  }
+
+  // Add this function to select and load a chat
+  const selectChat = async (chatId, chatTitle) => {
+    if (chatId === currentChatId) return
+    
+    try {
+      setIsLoading(true)
+      
+      // Save current chat ID for persistence
+      setCurrentChatId(chatId)
+      localStorage.setItem('currentChatId', chatId)
+      
+      // Update active chat for UI
+      setActiveChat(chatTitle)
+      
+      // Fetch messages for this chat
+      const response = await axios.get(`${MONGO_API_URL}/chats/${chatId}`)
+      
+      if (response.data.success) {
+        // Update the messages state with the loaded messages
+        setMessages(response.data.data.messages || [])
+        console.log(`Loaded ${response.data.data.messages?.length || 0} messages for chat: ${chatTitle}`)
+      }
+    } catch (error) {
+      console.error('Error loading chat:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Create a new chat
+  const createNewChat = async () => {
+    try {
+      setIsLoading(true)
+      const title = `Chat ${new Date().toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric'
+      })}`
+      
+      const response = await axios.post(`${MONGO_API_URL}/chats`, { title })
+      
+      if (response.data.success) {
+        const newChat = response.data.data
+        
+        // Update chat list
+        setChatList(prevChats => [newChat, ...prevChats])
+        
+        // Select the new chat
+        selectChat(newChat.chatId, newChat.title)
+        
+        // Clear messages for the new chat
+        setMessages([])
+      }
+    } catch (error) {
+      console.error('Error creating new chat:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Load chats on component mount
+  useEffect(() => {
+    fetchAllChats()
+  }, [])
 
   return (
     <div className="chat-app">
@@ -1143,15 +1200,21 @@ function App() {
         <button className="new-chat-btn" onClick={startNewChat}>NEW CHAT</button>
         
         <div className="chat-history">
-          <div className={`chat-item ${activeChat === 'Chat 1' ? 'active' : ''}`} onClick={() => setActiveChat('Chat 1')}>
-            Chat 1
-          </div>
-          <div className={`chat-item ${activeChat === 'Chat 2' ? 'active' : ''}`} onClick={() => setActiveChat('Chat 2')}>
-            Chat 2
-          </div>
-          <div className={`chat-item ${activeChat === 'Chat 3' ? 'active' : ''}`} onClick={() => setActiveChat('Chat 3')}>
-            Chat 3
-          </div>
+          {loadingChats ? (
+            <div className="chat-loading">Loading chats...</div>
+          ) : chatList.length === 0 ? (
+            <div className="no-chats">No chats yet. Start a new chat!</div>
+          ) : (
+            chatList.map(chat => (
+              <div 
+                key={chat.chatId} 
+                className={`chat-item ${chat.chatId === currentChatId ? 'active' : ''}`} 
+                onClick={() => selectChat(chat.chatId, chat.title)}
+              >
+                {chat.title}
+              </div>
+            ))
+          )}
         </div>
       </div>
       
@@ -1163,7 +1226,7 @@ function App() {
             <div className="logo-circle">
               <span className="logo-star">★</span>
             </div>
-            <h1 className="navbar-title">QWB Chat Assistant</h1>
+            <h1 className="navbar-title">{activeChat || "QWB Chat Assistant"}</h1>
           </div>
           <button className="sidebar-toggle-btn" onClick={toggleSidebar}>
             {sidebarOpen ? '✕' : '☰'}
